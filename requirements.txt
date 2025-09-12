@@ -1,0 +1,9 @@
+geopandas
+pandas
+folium
+pandas
+plotly
+streamlit
+streamlit-folium
+dash
+dash-leaflet
