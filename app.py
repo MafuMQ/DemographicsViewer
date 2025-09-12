@@ -4,7 +4,6 @@ import dash_leaflet as dl
 import geopandas as gpd
 import pandas as pd
 import plotly.express as px
-import json
 import os
 
 dataDict = {
@@ -41,15 +40,6 @@ def geojson_features(gdf):
         })
     return {"type": "FeatureCollection", "features": features}
 
-def make_popup(region_id, value1, value2):
-    fig = px.bar(
-        x=['value1', 'value2'],
-        y=[value1, value2],
-        labels={'x': 'Metric', 'y': 'Value'},
-        title=f"Data for {region_id}"
-    )
-    return fig.to_html(full_html=False, include_plotlyjs='cdn')
-
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
@@ -62,7 +52,7 @@ app.layout = html.Div([
     ),
     dl.Map(
         id="map",
-        center=[-29, 24], #Default for south africa
+        center=[-29, 24],  # Default for South Africa
         zoom=5,
         style={'width': '100%', 'height': '600px'},
         children=[
@@ -72,12 +62,15 @@ app.layout = html.Div([
                 options=dict(style=dict(weight=2, color="blue", fillOpacity=0.2)),
                 hoverStyle=dict(weight=4, color='red', fillOpacity=0.5),
                 zoomToBoundsOnClick=True
-            )  # Always present!
+            )
         ]
     ),
-    html.Div(id='popup-div')
+    html.Div(id="region-panel", style={"margin": "20px 0", "padding": "10px", "border": "1px solid #ccc"}),
+    html.H2("Region Data"),
+    dcc.Graph(id='region-graph')  # Graph appears here
 ])
 
+# Update map polygons when level changes
 @app.callback(
     Output("geojson", "data"),
     Output("map", "center"),
@@ -89,22 +82,43 @@ def update_map(level):
     geojson = geojson_features(gdf)
     return geojson, center
 
+# Update graph and panel when a polygon is clicked
 @app.callback(
-    Output('popup-div', 'children'),
-    Input('geojson', 'featureClick'),
+    Output('region-graph', 'figure'),
+    Output('region-panel', 'children'),
+    Input('geojson', 'clickData'),   # <-- change here
+    Input('geojson', 'n_clicks'),
     Input('level-dropdown', 'value')
 )
-def display_popup(feature_click, level):
-    print("feature_click:", feature_click)  # Debug print
-    if not feature_click:
-        return ""
-    props = feature_click.get('properties', {})
-    popup_html = make_popup(
-        props.get('region_id', 'Unknown'),
-        props.get('value1', 0),
-        props.get('value2', 0)
+def display_graph_and_panel(clickData, n_clicks, level):
+    if not clickData:
+        return px.bar(title="Click a region to see data"), "Click a region to see details."
+    # Extract properties as in test.py
+    props = None
+    if isinstance(clickData, dict):
+        if "feature" in clickData and isinstance(clickData["feature"], dict):
+            props = clickData["feature"].get("properties")
+        elif "properties" in clickData and isinstance(clickData["properties"], dict):
+            props = clickData["properties"]
+        elif "payload" in clickData and isinstance(clickData["payload"], dict):
+            payload = clickData["payload"]
+            props = payload.get("properties") or (payload.get("feature") or {}).get("properties")
+        elif "features" in clickData and isinstance(clickData["features"], list) and clickData["features"]:
+            props = clickData["features"][0].get("properties")
+    if not props:
+        return px.bar(title="No data"), "No properties found in clickData."
+    fig = px.bar(
+        x=['value1', 'value2'],
+        y=[props.get('value1', 0), props.get('value2', 0)],
+        labels={'x': 'Metric', 'y': 'Value'},
+        title=f"Data for {props.get('region_id', 'Unknown')}"
     )
-    return html.Iframe(srcDoc=popup_html, width="500", height="350")
+    panel = html.Div([
+        html.H3(f"Region: {props.get('region_id', 'Unknown')}"),
+        html.P(f"Value 1: {props.get('value1', 0)}"),
+        html.P(f"Value 2: {props.get('value2', 0)}"),
+    ])
+    return fig, panel
 
 if __name__ == '__main__':
     app.run(debug=True)
